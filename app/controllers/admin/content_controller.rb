@@ -52,6 +52,45 @@ class Admin::ContentController < Admin::BaseController
     redirect_to :action => 'index'
   end
 
+def merge
+    unless current_user.admin?
+      redirect_to :action => 'index'
+      flash[:error] = _("Error, you are not allowed to perform this action")
+      return    
+    end
+
+    @article = find_article(params[:id])
+    if @article.nil?
+      redirect_to :action => 'index'
+      flash[:error] = _("Error, invalid origin article ID specified!")
+      return
+    end    
+    
+    unless params[:merge_id]
+      redirect_to :action => 'edit', :id => @article.id
+      flash[:error] = _("Invalid article ID specified!")
+      return    
+    end
+
+    article_to_merge = find_article(params[:merge_id])
+    if article_to_merge.nil?
+      redirect_to :action => 'edit', :id => @article.id
+      flash[:error] = _("Invalid article ID specified!")
+      return    
+    end    
+
+    begin
+      @article.merge_with(article_to_merge.id)
+    rescue => e
+      redirect_to :action => 'edit', :id => @article.id
+      flash[:error] = _("Error while merging article: #{e}")
+      return    
+    end  
+
+    set_the_flash    
+    redirect_to :action => 'index'
+  end
+
   def insert_editor
     editor = 'visual'
     editor = 'simple' if params[:editor].to_s == 'simple'
@@ -115,6 +154,15 @@ class Admin::ContentController < Admin::BaseController
 
   protected
 
+  def find_article(article_id)
+    begin
+      article = Article.find(article_id)
+    rescue ActiveRecord::RecordNotFound
+      article = nil
+    end
+    return article      
+  end
+
   def get_fresh_or_existing_draft_for_article
     if @article.published and @article.id
       parent_id = @article.id
@@ -144,6 +192,11 @@ class Admin::ContentController < Admin::BaseController
     id = params[:article][:id] if params[:article] && params[:article][:id]
     @article = Article.get_or_build_article(id)
     @article.text_filter = current_user.text_filter if current_user.simple_editor?
+
+   if request.post? and params[:merge_button] and params[:merge] and params[:merge][:with]
+      redirect_to :action => 'merge', :id => params[:id], :merge_id => params[:merge][:with]
+      return
+    end
 
     @post_types = PostType.find(:all)
     if request.post?
@@ -189,7 +242,10 @@ class Admin::ContentController < Admin::BaseController
       flash[:notice] = _('Article was successfully created')
     when 'edit'
       flash[:notice] = _('Article was successfully updated.')
+    when 'merge'
+      flash[:notice] = _('Article was successfully merged.')
     else
+
       raise "I don't know how to tidy up action: #{params[:action]}"
     end
   end
